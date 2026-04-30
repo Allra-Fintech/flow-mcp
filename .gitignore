@@ -1,0 +1,24 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+.env
+.env.*
+!.env.example
+
+# Sensitive local credentials / browser captures
+session.json
+*.har
+*.cookie
+*.cookies
+.flow-session*
+
+# Tooling / OS
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
