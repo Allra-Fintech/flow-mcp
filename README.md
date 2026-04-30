@@ -124,22 +124,33 @@ Claude Desktop에서 사용하려면 Claude Desktop 설정 파일에 flow MCP �
 ~/Library/Application Support/Claude/claude_desktop_config.json
 ```
 
-`mcpServers` 아래에 아래 설정을 붙여넣으세요.
+먼저 본인 환경의 실제 경로를 확인합니다.
 
-주의: JSON 파일이므로 실제 설정에는 Python 표현식인 `str(Path.home() / ...)`를 그대로 넣을 수 없습니다. 아래 예시는 이미 실제 문자열 경로로 적어둔 Claude Desktop용 JSON입니다.
+```bash
+which uv
+pwd
+```
+
+- `which uv` 결과를 `command`에 넣습니다.
+- `pwd` 결과, 또는 원샷 설치 기본 위치인 `/Users/<YOUR_USER>/.flow-mcp/app`을 `args`의 `--directory` 다음 값에 넣습니다.
+- `FLOW_SESSION_PATH`에는 본인 홈 디렉터리 기준 세션 파일 경로를 넣습니다.
+
+주의: Claude Desktop 설정은 JSON 파일입니다. `~`, `$HOME`, `str(Path.home() / ...)` 같은 shell/Python 표현식은 쓰지 말고 실제 절대경로 문자열로 바꿔서 넣어야 합니다.
+
+`mcpServers` 아래에 아래 설정을 붙여넣고, `<YOUR_USER>`와 경로를 본인 환경에 맞게 바꾸세요.
 
 ```json
 {
   "flow": {
-    "command": "/Users/gnoyes/.local/bin/uv",
+    "command": "/Users/<YOUR_USER>/.local/bin/uv",
     "args": [
       "--directory",
-      "/Users/gnoyes/allra/flow-mcp",
+      "/Users/<YOUR_USER>/.flow-mcp/app",
       "run",
       "flow-mcp"
     ],
     "env": {
-      "FLOW_SESSION_PATH": "/Users/gnoyes/.flow-mcp/session.json",
+      "FLOW_SESSION_PATH": "/Users/<YOUR_USER>/.flow-mcp/session.json",
       "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
     }
   }
@@ -152,21 +163,23 @@ Claude Desktop에서 사용하려면 Claude Desktop 설정 파일에 flow MCP �
 {
   "mcpServers": {
     "flow": {
-      "command": "/Users/gnoyes/.local/bin/uv",
+      "command": "/Users/<YOUR_USER>/.local/bin/uv",
       "args": [
         "--directory",
-        "/Users/gnoyes/allra/flow-mcp",
+        "/Users/<YOUR_USER>/.flow-mcp/app",
         "run",
         "flow-mcp"
       ],
       "env": {
-        "FLOW_SESSION_PATH": "/Users/gnoyes/.flow-mcp/session.json",
+        "FLOW_SESSION_PATH": "/Users/<YOUR_USER>/.flow-mcp/session.json",
         "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
       }
     }
   }
 }
 ```
+
+레포지토리를 직접 clone한 경우에는 `--directory` 값을 clone한 실제 경로로 바꾸세요.
 
 이미 다른 MCP 서버가 있다면 기존 `mcpServers` 안에 `flow` 항목만 추가하세요. 기존 서버 설정을 지우면 안 됩니다.
 
