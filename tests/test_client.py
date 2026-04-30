@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from flow_mcp.client import _flow_password_encrypt, extract_session_from_har
+from flow_mcp.client import _flow_device_json, _flow_password_encrypt, extract_session_from_har
 
 
 def test_extract_session_from_sanitized_har(tmp_path: Path) -> None:
@@ -36,3 +36,13 @@ def test_flow_password_encrypt_is_deterministic() -> None:
     assert encrypted == _flow_password_encrypt("password", "20260430100910")
     assert encrypted != "password"
     assert encrypted.endswith("=")
+
+
+def test_flow_device_json_matches_browser_shape() -> None:
+    device = _flow_device_json()
+
+    assert set(device) == {"DUID", "DUID_NM"}
+    assert device["DUID_NM"] == f"PC-CHROME_{device['DUID']}"
+    parts = device["DUID"].split("-")
+    assert len(parts) == 4
+    assert all(part.isdigit() for part in parts)

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -100,6 +101,25 @@ def _flow_password_encrypt(password: str, cur_dttm: str) -> str:
     return base64.b64encode(encrypted).decode("ascii")
 
 
+def _flow_device_json() -> dict[str, str]:
+    """Match Flow web's Often.getDeviceJson() shape for browser logins."""
+    duid = f"{secrets.randbelow(1_000_001)}-{secrets.randbelow(1_001)}-{secrets.randbelow(1_001)}-{secrets.randbelow(1_000_001)}"
+    return {"DUID": duid, "DUID_NM": f"PC-CHROME_{duid}"}
+
+
+def _local_timezone_name() -> str:
+    tz = os.environ.get("TZ")
+    if tz:
+        try:
+            ZoneInfo(tz)
+            return tz
+        except ZoneInfoNotFoundError:
+            pass
+    # Flow's Korean workspace usually uses Asia/Seoul; this is also what the browser sends
+    # for Korea-based users. The header is advisory for login/session validation.
+    return "Asia/Seoul"
+
+
 class FlowClient:
     """Small unofficial Flow.team web endpoint client.
 
@@ -132,6 +152,7 @@ class FlowClient:
                 "Origin": self.base_url,
                 "Referer": f"{self.base_url}/main.act",
                 "X-Requested-With": "XMLHttpRequest",
+                "x-user-timezone": _local_timezone_name(),
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             },
         )
@@ -213,6 +234,11 @@ class FlowClient:
         If Flow changes its frontend encryption again, this method can fail and should be
         rechecked against the current signin JavaScript.
         """
+        cookie_domain = urllib.parse.urlparse(self.base_url).hostname or "flow.team"
+        device = _flow_device_json()
+        self.http.cookies.set("googleLoginYn", "N", domain=cookie_domain, path="/")
+        self.http.cookies.set("FLOW_DUID", device["DUID"], domain=cookie_domain, path="/")
+
         time_data = self._post(
             "/FLOW_CUR_TIME_R001.jct",
             {"USER_ID": user_id},
@@ -220,17 +246,16 @@ class FlowClient:
             retries=0,
         )
         cur_dttm = str(time_data.get("CUR_DTTM") or "")
+        self.http.cookies.set("DATE_TIME", cur_dttm, domain=cookie_domain, path="/")
         public_key = str(time_data.get("KEY") or "")
         if public_key:
             raise FlowApiError("Flow returned an RSA login key; RSA password encryption is not implemented yet.")
 
         encrypted_password = _flow_password_encrypt(password, cur_dttm)
-        duid = f"{secrets.randbelow(1_000_001)}-{secrets.randbelow(1_001)}-{secrets.randbelow(1_001)}-{secrets.randbelow(1_000_001)}"
         payload = {
             "USER_ID": user_id,
             "RGSN_DTTM": "",
-            "DUID": duid,
-            "DUID_NM": f"PC-CHROME_{duid}",
+            **device,
             "PWD": encrypted_password,
             "ID_GB": "1",
             "ENCRYPT_YN": "YC",
