@@ -56,12 +56,14 @@ MCP tool 목록:
 
 ## 요구사항
 
-- macOS/Linux
+- macOS/Linux/Windows
 - Python 3.10+
 - git
 - uv
 
-`install.sh`는 uv가 없으면 자동으로 설치를 시도합니다.
+Windows는 WSL2 Ubuntu 사용을 권장합니다. Windows native PowerShell 설치도 가능하지만 아직 실험적입니다.
+
+`install.sh`는 macOS/Linux/WSL2 환경에서 uv가 없으면 자동으로 설치를 시도합니다.
 
 ## 설치 방법 1: curl로 원샷 설치
 
@@ -97,6 +99,66 @@ curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install
 ```
 
 파이프라인에서는 `FLOW_MCP_LOGIN=0 curl ... | bash`처럼 쓰면 환경변수가 `curl`에만 적용되고 `bash`에는 전달되지 않습니다. 위 예시처럼 `| FLOW_MCP_LOGIN=0 bash` 형태로 실행하세요.
+
+## Windows 사용자 설치 방법
+
+Windows에서는 WSL2 Ubuntu 사용을 권장합니다. Flow MCP 서버와 세션 파일은 WSL 안에 두고, Windows Claude Desktop은 `wsl.exe`를 통해 MCP 서버를 실행하는 방식입니다.
+
+PowerShell에서 WSL2 Ubuntu 설치:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+설치 후 Windows를 재시작해야 할 수 있습니다. Ubuntu 터미널을 열고 아래 명령을 실행합니다.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | bash
+```
+
+동작 확인:
+
+```bash
+cd ~/.flow-mcp/app
+uv run flow-mcp-setup smoke-test
+```
+
+Windows Claude Desktop 설정 파일 위치:
+
+```text
+%APPDATA%\Claude\claude_desktop_config.json
+```
+
+Windows Claude Desktop에서 WSL 안의 Flow MCP를 실행하려면 `mcpServers`에 다음 형태를 추가합니다.
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "wsl.exe",
+      "args": [
+        "-d",
+        "Ubuntu",
+        "--",
+        "bash",
+        "-lc",
+        "cd ~/.flow-mcp/app && uv run flow-mcp"
+      ],
+      "env": {
+        "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
+      }
+    }
+  }
+}
+```
+
+WSL 배포판 이름이 `Ubuntu`가 아니면 PowerShell에서 아래 명령으로 이름을 확인한 뒤 `args`의 `Ubuntu` 값을 바꾸세요.
+
+```powershell
+wsl -l -v
+```
+
+Windows native PowerShell에 직접 설치하는 방식은 아직 실험적입니다. 가능하면 WSL2 방식을 사용하세요.
 
 ## 설치 방법 2: 레포지토리 clone 후 설치
 
@@ -175,30 +237,7 @@ uv run flow-mcp-setup claude-config
 
 주의: Claude Desktop 설정은 JSON 파일입니다. `~`, `$HOME`, `%USERPROFILE%`, `str(Path.home() / ...)` 같은 shell/Python 표현식은 쓰지 말고 실제 절대경로 문자열로 바꿔서 넣어야 합니다.
 
-Windows에서 WSL2 Ubuntu에 설치한 경우에는 Windows Claude Desktop이 WSL 안의 서버를 실행해야 합니다. 이때는 Windows 쪽 Claude 설정에 다음 형태를 사용합니다.
-
-```json
-{
-  "mcpServers": {
-    "flow": {
-      "command": "wsl.exe",
-      "args": [
-        "-d",
-        "Ubuntu",
-        "--",
-        "bash",
-        "-lc",
-        "cd ~/.flow-mcp/app && uv run flow-mcp"
-      ],
-      "env": {
-        "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
-      }
-    }
-  }
-}
-```
-
-WSL 배포판 이름이 `Ubuntu`가 아니면 `wsl -l -v`로 확인한 이름으로 바꾸세요.
+Windows에서 WSL2 Ubuntu에 설치한 경우에는 위의 `Windows 사용자 설치 방법` 섹션에 있는 `wsl.exe` 설정 예시를 사용하세요.
 
 Windows native에 직접 설치한 경우에는 `command`, `--directory`, `FLOW_SESSION_PATH`를 Windows 절대경로로 넣어야 합니다. 예: `C:\\Users\\<YOUR_USER>\\.flow-mcp\\app`. Windows native 방식은 아직 실험적으로 보고, 가능하면 WSL2 사용을 권장합니다.
 
