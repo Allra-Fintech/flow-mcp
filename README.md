@@ -72,17 +72,19 @@ curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install
 
 ```bash
 # 로그인 없이 설치만
-FLOW_MCP_LOGIN=0 curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | FLOW_MCP_LOGIN=0 bash
 
 # Hermes config 자동 등록 없이 설치
-FLOW_MCP_CONFIGURE_HERMES=0 curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | FLOW_MCP_CONFIGURE_HERMES=0 bash
 
 # 설치 위치 변경
-FLOW_MCP_INSTALL_DIR="$HOME/dev/flow-mcp" curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | FLOW_MCP_INSTALL_DIR="$HOME/dev/flow-mcp" bash
 
 # MCP 서버 이름 변경
-FLOW_MCP_SERVER_NAME=flow-team curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allra-Fintech/flow-mcp/main/install.sh | FLOW_MCP_SERVER_NAME=flow-team bash
 ```
+
+파이프라인에서는 `FLOW_MCP_LOGIN=0 curl ... | bash`처럼 쓰면 환경변수가 `curl`에만 적용되고 `bash`에는 전달되지 않습니다. 위 예시처럼 `| FLOW_MCP_LOGIN=0 bash` 형태로 실행하세요.
 
 ## 설치 방법 2: 레포지토리 clone 후 설치
 
