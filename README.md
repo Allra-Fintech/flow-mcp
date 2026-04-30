@@ -4,6 +4,18 @@ Flow.team 웹 API를 MCP(Model Context Protocol) 서버로 감싼 비공식 내�
 
 본인 또는 조직에서 접근 권한이 있는 Flow 계정/워크스페이스에서만 사용하세요. 이 저장소에는 개인 인증정보, HAR 파일, 쿠키, 세션 토큰이 포함되지 않습니다.
 
+<table>
+  <tr>
+    <td>
+      <img width="390" alt="image" src="https://github.com/user-attachments/assets/8002e629-e846-4550-bc79-97cdaa6ee73a" />
+    </td>
+    <td>
+      <img width="390" alt="image" src="https://github.com/user-attachments/assets/d8ddfc00-73dc-4127-a1ac-47c3cb880dfa" />
+    </td>
+  </tr>
+</table>
+
+
 ## 주의사항
 
 - 공식 Flow API 클라이언트가 아닙니다.
