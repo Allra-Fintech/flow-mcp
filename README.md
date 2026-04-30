@@ -132,60 +132,38 @@ uv run flow-mcp-setup smoke-test
 
 Claude Desktop에서 사용하려면 Claude Desktop 설정 파일에 flow MCP 서버를 직접 추가합니다.
 
-설정 파일 위치:
+설정 파일 위치는 OS마다 다릅니다.
 
 ```text
-~/Library/Application Support/Claude/claude_desktop_config.json
+macOS:   ~/Library/Application Support/Claude/claude_desktop_config.json
+Windows: %APPDATA%\Claude\claude_desktop_config.json
+Linux:   ~/.config/Claude/claude_desktop_config.json
 ```
 
-먼저 본인 환경의 실제 경로를 확인합니다.
+설치 경로와 `uv` 경로도 OS/설치 방식마다 다르므로, 고정된 예시를 그대로 복사하지 말고 설치된 위치에서 설정 JSON을 생성하세요.
+
+macOS/Linux/WSL 안에서 Claude Desktop 설정용 JSON 생성:
 
 ```bash
-which uv
-pwd
+cd ~/.flow-mcp/app
+uv run flow-mcp-setup claude-config
 ```
 
-- `which uv` 결과를 `command`에 넣습니다.
-- `pwd` 결과, 또는 원샷 설치 기본 위치인 `/Users/<YOUR_USER>/.flow-mcp/app`을 `args`의 `--directory` 다음 값에 넣습니다.
-- `FLOW_SESSION_PATH`에는 본인 홈 디렉터리 기준 세션 파일 경로를 넣습니다.
-
-주의: Claude Desktop 설정은 JSON 파일입니다. `~`, `$HOME`, `str(Path.home() / ...)` 같은 shell/Python 표현식은 쓰지 말고 실제 절대경로 문자열로 바꿔서 넣어야 합니다.
-
-`mcpServers` 아래에 아래 설정을 붙여넣고, `<YOUR_USER>`와 경로를 본인 환경에 맞게 바꾸세요.
-
-```json
-{
-  "flow": {
-    "command": "/Users/<YOUR_USER>/.local/bin/uv",
-    "args": [
-      "--directory",
-      "/Users/<YOUR_USER>/.flow-mcp/app",
-      "run",
-      "flow-mcp"
-    ],
-    "env": {
-      "FLOW_SESSION_PATH": "/Users/<YOUR_USER>/.flow-mcp/session.json",
-      "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
-    }
-  }
-}
-```
-
-기존 설정 파일에 `mcpServers`가 없다면 전체 파일은 다음처럼 만들면 됩니다.
+출력 예시는 다음과 같습니다. 실제 출력에는 현재 머신의 `uv`, 프로젝트, 세션 파일 절대경로가 들어갑니다.
 
 ```json
 {
   "mcpServers": {
     "flow": {
-      "command": "/Users/<YOUR_USER>/.local/bin/uv",
+      "command": "/absolute/path/to/uv",
       "args": [
         "--directory",
-        "/Users/<YOUR_USER>/.flow-mcp/app",
+        "/absolute/path/to/flow-mcp",
         "run",
         "flow-mcp"
       ],
       "env": {
-        "FLOW_SESSION_PATH": "/Users/<YOUR_USER>/.flow-mcp/session.json",
+        "FLOW_SESSION_PATH": "/absolute/path/to/session.json",
         "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
       }
     }
@@ -193,9 +171,36 @@ pwd
 }
 ```
 
-레포지토리를 직접 clone한 경우에는 `--directory` 값을 clone한 실제 경로로 바꾸세요.
+기존 설정 파일에 다른 MCP 서버가 있다면 전체 파일을 덮어쓰지 말고, 출력된 JSON의 `mcpServers.flow` 항목만 기존 `mcpServers` 안에 추가하세요.
 
-이미 다른 MCP 서버가 있다면 기존 `mcpServers` 안에 `flow` 항목만 추가하세요. 기존 서버 설정을 지우면 안 됩니다.
+주의: Claude Desktop 설정은 JSON 파일입니다. `~`, `$HOME`, `%USERPROFILE%`, `str(Path.home() / ...)` 같은 shell/Python 표현식은 쓰지 말고 실제 절대경로 문자열로 바꿔서 넣어야 합니다.
+
+Windows에서 WSL2 Ubuntu에 설치한 경우에는 Windows Claude Desktop이 WSL 안의 서버를 실행해야 합니다. 이때는 Windows 쪽 Claude 설정에 다음 형태를 사용합니다.
+
+```json
+{
+  "mcpServers": {
+    "flow": {
+      "command": "wsl.exe",
+      "args": [
+        "-d",
+        "Ubuntu",
+        "--",
+        "bash",
+        "-lc",
+        "cd ~/.flow-mcp/app && uv run flow-mcp"
+      ],
+      "env": {
+        "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": "일정 공유"
+      }
+    }
+  }
+}
+```
+
+WSL 배포판 이름이 `Ubuntu`가 아니면 `wsl -l -v`로 확인한 이름으로 바꾸세요.
+
+Windows native에 직접 설치한 경우에는 `command`, `--directory`, `FLOW_SESSION_PATH`를 Windows 절대경로로 넣어야 합니다. 예: `C:\\Users\\<YOUR_USER>\\.flow-mcp\\app`. Windows native 방식은 아직 실험적으로 보고, 가능하면 WSL2 사용을 권장합니다.
 
 설정 후 Claude Desktop을 완전히 종료했다가 다시 실행하세요.
 

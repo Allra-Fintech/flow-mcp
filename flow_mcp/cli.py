@@ -114,6 +114,26 @@ def cmd_setup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_claude_config(args: argparse.Namespace) -> int:
+    project_dir = Path(args.project_dir or os.getcwd()).resolve()
+    session_path = Path(args.session_path or DEFAULT_SESSION_PATH).expanduser().resolve()
+    uv_command = args.uv_command or shutil.which("uv") or "uv"
+    config = {
+        "mcpServers": {
+            args.server_name: {
+                "command": uv_command,
+                "args": ["--directory", str(project_dir), "run", "flow-mcp"],
+                "env": {
+                    "FLOW_SESSION_PATH": str(session_path),
+                    "FLOW_DEFAULT_SCHEDULE_PROJECT_TITLE": args.default_schedule_project_title,
+                },
+            }
+        }
+    }
+    _print_json(config)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Setup and manage the Flow MCP server")
     parser.add_argument("--session-path", default=None, help=f"Session file path; default: {DEFAULT_SESSION_PATH}")
@@ -139,6 +159,13 @@ def build_parser() -> argparse.ArgumentParser:
     setup.add_argument("--configure-hermes", action="store_true", help="Append this server to ~/.hermes/config.yaml")
     setup.add_argument("--server-name", default="flow", help="Hermes MCP server name")
     setup.set_defaults(func=cmd_setup)
+
+    claude = sub.add_parser("claude-config", help="Print Claude Desktop MCP JSON for this machine")
+    claude.add_argument("--project-dir", default=None, help="Project directory; default: current directory")
+    claude.add_argument("--server-name", default="flow", help="Claude MCP server name")
+    claude.add_argument("--uv-command", default=None, help="uv executable path; default: detected with PATH")
+    claude.add_argument("--default-schedule-project-title", default="일정 공유")
+    claude.set_defaults(func=cmd_claude_config)
 
     return parser
 
