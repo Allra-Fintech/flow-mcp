@@ -299,8 +299,6 @@ uv run flow-mcp-setup import-har ~/Downloads/flow.team.har
 uv run flow-mcp-setup smoke-test
 ```
 
-HAR 파일은 저장소 밖에 보관하고 공유하지 마세요.
-
 ## 개발
 
 문법 체크:
