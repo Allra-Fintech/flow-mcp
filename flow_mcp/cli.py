@@ -23,9 +23,19 @@ def _print_json(data: Any) -> None:
     print(json.dumps(data, ensure_ascii=False, indent=2))
 
 
+def _input_tty(prompt: str) -> str:
+    """Like input() but reads from /dev/tty so it works when stdin is a pipe."""
+    if sys.stdin.isatty():
+        return input(prompt).strip()
+    with open("/dev/tty") as tty:
+        sys.stderr.write(prompt)
+        sys.stderr.flush()
+        return tty.readline().rstrip("\n").strip()
+
+
 def cmd_login(args: argparse.Namespace) -> int:
     load_dotenv()
-    user_id = args.user_id or input("Flow ID/email: ").strip()
+    user_id = args.user_id or _input_tty("Flow ID/email: ")
     password = args.password or getpass.getpass("Flow password: ")
     client = FlowClient(session_path=args.session_path or None)
     try:
