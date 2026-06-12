@@ -60,6 +60,83 @@ def flow_list_project_posts(colabo_srno: str, page: int = 1, per_page: int = 20)
 
 
 @mcp.tool()
+def flow_get_post_detail(
+    colabo_srno: str,
+    colabo_commt_srno: str,
+    remark_per_page: int = 999,
+    remark_anchor_srno: str = "-1",
+) -> dict[str, Any]:
+    """Fetch a single Flow post (or subtask) with body and PREVIEW remarks only.
+
+    Returns COMMT_REC[0] with CNTN (body) and REMARK_REC (usually just the newest 2).
+    Use flow_list_post_remarks or flow_get_post_full to retrieve all comments.
+    """
+    return client().get_post_detail(
+        colabo_srno=colabo_srno,
+        colabo_commt_srno=colabo_commt_srno,
+        remark_per_page=remark_per_page,
+        remark_anchor_srno=remark_anchor_srno,
+    )
+
+
+@mcp.tool()
+def flow_list_post_remarks(
+    colabo_srno: str,
+    colabo_commt_srno: str,
+    anchor_srno: str = "-1",
+    order_type: str = "P",
+) -> dict[str, Any]:
+    """One page of remarks for a post via /COLABO2_REMARK_R101.jct.
+
+    anchor_srno: cursor — pass the oldest already-seen remark srno to fetch older
+    remarks. Response COLABO_REMARK_REC has the remarks; PREV_YN='Y' means more.
+    """
+    return client().list_post_remarks(
+        colabo_srno=colabo_srno,
+        colabo_commt_srno=colabo_commt_srno,
+        anchor_srno=anchor_srno,
+        order_type=order_type,
+    )
+
+
+@mcp.tool()
+def flow_extract_post(
+    colabo_srno: str,
+    colabo_commt_srno: str,
+    max_remark_pages: int = 20,
+) -> dict[str, Any]:
+    """Slim version of flow_get_post_full — body + flattened comments only.
+
+    Use this when iterating over many subtasks; response is ~30x smaller than
+    flow_get_post_full because metadata (TASK_REC, etc.) is dropped.
+    """
+    return client().extract_post(
+        colabo_srno=colabo_srno,
+        colabo_commt_srno=colabo_commt_srno,
+        max_remark_pages=max_remark_pages,
+    )
+
+
+@mcp.tool()
+def flow_get_post_full(
+    colabo_srno: str,
+    colabo_commt_srno: str,
+    max_remark_pages: int = 20,
+) -> dict[str, Any]:
+    """Fetch a post with body + ALL remarks (auto-paginates).
+
+    Calls flow_get_post_detail then walks backward via flow_list_post_remarks until
+    all comments are collected. Returns a flat dict with the body and a unified
+    remarks list sorted by RGSN_DTTM ascending.
+    """
+    return client().get_post_full(
+        colabo_srno=colabo_srno,
+        colabo_commt_srno=colabo_commt_srno,
+        max_remark_pages=max_remark_pages,
+    )
+
+
+@mcp.tool()
 def flow_list_project_schedules(colabo_srno: str, first_dt: str, last_dt: str) -> dict[str, Any]:
     """List raw schedules for a Flow project.
 

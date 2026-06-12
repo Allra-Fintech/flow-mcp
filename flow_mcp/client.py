@@ -342,6 +342,143 @@ class FlowClient:
         )
         return self._post("/COLABO2_R104.jct", payload, referer_path="/main.act?detail")
 
+    def get_post_detail(
+        self,
+        colabo_srno: str,
+        colabo_commt_srno: str,
+        remark_per_page: int = 999,
+        remark_anchor_srno: str = "-1",
+    ) -> dict[str, Any]:
+        """Fetch a single post (or subtask) with body and preview remarks.
+
+        Uses /COLABO2_R104.jct?mode=DETAIL. Returns COMMT_REC[0] with the body (CNTN)
+        and REMARK_REC (preview only — typically the newest ~2). To collect all remarks
+        when REMARK_CNT > REMARK_REC.length, follow up with list_post_remarks() using
+        the oldest received remark srno as anchor.
+        """
+        payload = self._auth_payload(
+            GUBUN="DETAIL",
+            COLABO_SRNO=str(colabo_srno),
+            COLABO_COMMT_SRNO=str(colabo_commt_srno),
+            COLABO_REMARK_SRNO=str(remark_anchor_srno),
+            RENEWAL_YN="Y",
+            PG_NO=1,
+            PG_PER_CNT=int(remark_per_page),
+            COPY_YN="N",
+        )
+        return self._post("/COLABO2_R104.jct?mode=DETAIL", payload, referer_path="/main.act?detail")
+
+    def list_post_remarks(
+        self,
+        colabo_srno: str,
+        colabo_commt_srno: str,
+        anchor_srno: str = "-1",
+        order_type: str = "P",
+    ) -> dict[str, Any]:
+        """Fetch one page of remarks for a post via /COLABO2_REMARK_R101.jct?mode=M.
+
+        anchor_srno: the COLABO_REMARK_SRNO cursor (use the oldest already-seen srno
+        to load older remarks). order_type 'P' loads earlier (past) remarks.
+        Response contains COLABO_REMARK_REC and PREV_YN/NEXT_YN flags.
+        """
+        payload = self._auth_payload(
+            MODE="M",
+            ORDER_TYPE=order_type,
+            COLABO_SRNO=str(colabo_srno),
+            COLABO_COMMT_SRNO=str(colabo_commt_srno),
+            SRCH_COLABO_REMARK_SRNO=str(anchor_srno),
+            REPEAT_DTTM="",
+            REMARK_FILTER="",
+            packetOption=1,
+        )
+        return self._post("/COLABO2_REMARK_R101.jct?mode=M", payload, referer_path="/main.act?detail")
+
+    def extract_post(
+        self,
+        colabo_srno: str,
+        colabo_commt_srno: str,
+        max_remark_pages: int = 20,
+    ) -> dict[str, Any]:
+        """Slim wrapper around get_post_full — returns only body + flattened comments.
+
+        Output is ~1KB per typical subtask vs ~30KB raw, which matters when iterating
+        over many subtasks. Body and comment text fall back to CNTN when REMARK_CNTN
+        is missing.
+        """
+        full = self.get_post_full(colabo_srno, colabo_commt_srno, max_remark_pages=max_remark_pages)
+        post = full.get("post") or {}
+        comments = []
+        for r in full.get("remarks") or []:
+            comments.append({
+                "srno": r.get("COLABO_REMARK_SRNO"),
+                "author": r.get("RGSR_NM"),
+                "author_id": r.get("RGSR_ID"),
+                "registered_at": r.get("RGSN_DTTM"),
+                "text": r.get("REMARK_CNTN") or r.get("CNTN"),
+                "is_system": (r.get("SYSTEM_REMARK_YN") == "Y"),
+                "img_count": len(r.get("IMG_ATCH_REC") or []) + len(r.get("REMARK_IMG_ATCH_REC") or []),
+                "atch_count": len(r.get("ATCH_REC") or []) + len(r.get("REMARK_ATCH_REC") or []),
+            })
+        return {
+            "colabo_srno": str(colabo_srno),
+            "post_srno": str(colabo_commt_srno),
+            "title": post.get("COMMT_TTL"),
+            "content": post.get("CNTN") or "",
+            "remark_expected": full.get("expected_remark_cnt"),
+            "remark_fetched": full.get("fetched_remark_cnt"),
+            "comments": comments,
+        }
+
+    def get_post_full(
+        self,
+        colabo_srno: str,
+        colabo_commt_srno: str,
+        max_remark_pages: int = 20,
+    ) -> dict[str, Any]:
+        """Fetch a post with body + ALL remarks via DETAIL + REMARK_R101 pagination.
+
+        Strategy:
+        1. Call get_post_detail to grab the body and the preview remarks (REMARK_REC).
+        2. If ONLY_REMARK_CNT > 0, walk backward via list_post_remarks using the oldest
+           received srno as anchor, until PREV_YN != 'Y' or max_remark_pages hit.
+        3. Return a flat dict with `post` (the COMMT_REC entry, less REMARK_REC) and
+           `remarks` (merged + de-duplicated, sorted by RGSN_DTTM ascending).
+        """
+        detail = self.get_post_detail(colabo_srno, colabo_commt_srno)
+        commt = (detail.get("COMMT_REC") or [{}])[0]
+        preview = list(commt.get("REMARK_REC") or [])
+        only_remark_cnt = int(str(commt.get("ONLY_REMARK_CNT") or "0") or "0")
+
+        all_remarks: dict[str, dict[str, Any]] = {r.get("COLABO_REMARK_SRNO"): r for r in preview if r.get("COLABO_REMARK_SRNO")}
+
+        if only_remark_cnt > 0 and preview:
+            anchor = min((r.get("COLABO_REMARK_SRNO") for r in preview if r.get("COLABO_REMARK_SRNO")), default=None)
+            for _ in range(max_remark_pages):
+                if not anchor:
+                    break
+                page = self.list_post_remarks(colabo_srno, colabo_commt_srno, anchor_srno=anchor, order_type="P")
+                rec = page.get("COLABO_REMARK_REC") or []
+                new_any = False
+                for r in rec:
+                    srno = r.get("COLABO_REMARK_SRNO")
+                    if srno and srno not in all_remarks:
+                        all_remarks[srno] = r
+                        new_any = True
+                if not new_any or (page.get("PREV_YN") or "").upper() != "Y":
+                    break
+                anchor = min((r.get("COLABO_REMARK_SRNO") for r in rec if r.get("COLABO_REMARK_SRNO")), default=None)
+
+        sorted_remarks = sorted(all_remarks.values(), key=lambda r: (r.get("RGSN_DTTM") or ""))
+        post_meta = {k: v for k, v in commt.items() if k != "REMARK_REC"}
+        return {
+            "colabo_srno": str(colabo_srno),
+            "colabo_commt_srno": str(colabo_commt_srno),
+            "expected_remark_cnt": int(str(commt.get("REMARK_CNT") or "0") or "0"),
+            "fetched_remark_cnt": len(sorted_remarks),
+            "post": post_meta,
+            "remarks": sorted_remarks,
+        }
+
     def list_project_schedules(
         self,
         colabo_srno: str,
