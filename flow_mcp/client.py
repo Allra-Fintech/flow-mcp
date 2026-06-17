@@ -7,7 +7,7 @@ import re
 import secrets
 import time
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Optional
@@ -30,11 +30,13 @@ class FlowApiError(RuntimeError):
 class FlowSession:
     user_id: str
     rgsn_dttm: str
+    cookies: dict[str, str] = field(default_factory=dict)
 
-    def redacted(self) -> dict[str, str]:
+    def redacted(self) -> dict[str, Any]:
         return {
             "user_id": _redact(self.user_id),
             "rgsn_dttm": _redact(self.rgsn_dttm),
+            "cookies": sorted(self.cookies.keys()),
         }
 
 
@@ -69,6 +71,7 @@ def extract_session_from_har(har_path: str | Path) -> FlowSession:
     path = Path(har_path).expanduser()
     data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
     entries = data.get("log", {}).get("entries", [])
+    best: FlowSession | None = None
     for entry in entries:
         payload = _parse_post_json_from_har_entry(entry)
         if not payload:
@@ -76,8 +79,22 @@ def extract_session_from_har(har_path: str | Path) -> FlowSession:
         user_id = payload.get("USER_ID")
         rgsn_dttm = payload.get("RGSN_DTTM")
         if user_id and rgsn_dttm and str(rgsn_dttm).startswith("FLOW_"):
-            return FlowSession(user_id=str(user_id), rgsn_dttm=str(rgsn_dttm))
-    raise FlowApiError("No authenticated USER_ID/RGSN_DTTM pair found in HAR")
+            token = str(rgsn_dttm)
+            # HAR JSON values are still URL-encoded once (token specials like %2F);
+            # normalize to raw base64 so the send path can re-encode deterministically.
+            while "%" in token:
+                dec = urllib.parse.unquote(token)
+                if dec == token:
+                    break
+                token = dec
+            # Flow auth also requires server-issued cookies (JSESSIONID, AWSALB sticky
+            # session). Pull them from the same HAR entry — the latest match wins.
+            cookies_arr = entry.get("request", {}).get("cookies") or []
+            cookies = {c["name"]: c["value"] for c in cookies_arr if c.get("name") and c.get("value") is not None}
+            best = FlowSession(user_id=str(user_id), rgsn_dttm=token, cookies=cookies)
+    if best is None:
+        raise FlowApiError("No authenticated USER_ID/RGSN_DTTM pair found in HAR")
+    return best
 
 
 def _flow_password_encrypt(password: str, cur_dttm: str) -> str:
@@ -128,8 +145,11 @@ class FlowClient:
       Content-Type: application/x-www-form-urlencoded; charset=UTF-8
       body: _JSON_=<urlencoded JSON>
 
-    Auth for normal API calls appears to be USER_ID + RGSN_DTTM token in the JSON body,
-    not cookies. That token is sensitive and should be treated like a session credential.
+    Auth for normal API calls requires both USER_ID + RGSN_DTTM in the JSON body AND
+    the server-issued session cookies (JSESSIONID, plus AWSALB sticky-session pair).
+    Without the cookies, the server treats the request as a brand-new anonymous session
+    and returns S0002 even with a valid token. The token and the cookies are both
+    sensitive and persisted to ~/.flow-mcp/session.json together.
     """
 
     def __init__(
@@ -143,8 +163,6 @@ class FlowClient:
         self.session_path = Path(session_path or DEFAULT_SESSION_PATH).expanduser()
         self.user_id = user_id or os.environ.get("FLOW_USER_ID") or ""
         self.rgsn_dttm = rgsn_dttm or os.environ.get("FLOW_RGSN_DTTM") or ""
-        if not (self.user_id and self.rgsn_dttm):
-            self.load_session(required=False)
         self.http = httpx.Client(
             timeout=30,
             headers={
@@ -156,23 +174,40 @@ class FlowClient:
                 "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
             },
         )
+        if not (self.user_id and self.rgsn_dttm):
+            loaded = self.load_session(required=False)
+            if loaded and loaded.cookies:
+                self._apply_cookies(loaded.cookies)
+
+    def _apply_cookies(self, cookies: dict[str, str]) -> None:
+        domain = urllib.parse.urlparse(self.base_url).hostname or "flow.team"
+        for name, value in cookies.items():
+            self.http.cookies.set(name, value, domain=domain, path="/")
+
+    def _current_cookies(self) -> dict[str, str]:
+        return {c.name: c.value for c in self.http.cookies.jar}
 
     @property
     def session(self) -> FlowSession:
         if not self.user_id or not self.rgsn_dttm:
             raise FlowApiError("Flow session is not configured. Use flow_import_session_from_har or set FLOW_USER_ID/FLOW_RGSN_DTTM.")
-        return FlowSession(self.user_id, self.rgsn_dttm)
+        return FlowSession(self.user_id, self.rgsn_dttm, cookies=self._current_cookies())
 
     def save_session(self, session: FlowSession | None = None) -> dict[str, Any]:
         session = session or self.session
         self.session_path.parent.mkdir(parents=True, exist_ok=True)
-        self.session_path.write_text(json.dumps(session.__dict__, ensure_ascii=False, indent=2), encoding="utf-8")
+        payload: dict[str, Any] = {"user_id": session.user_id, "rgsn_dttm": session.rgsn_dttm}
+        if session.cookies:
+            payload["cookies"] = session.cookies
+        self.session_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         try:
             self.session_path.chmod(0o600)
         except OSError:
             pass
         self.user_id = session.user_id
         self.rgsn_dttm = session.rgsn_dttm
+        if session.cookies:
+            self._apply_cookies(session.cookies)
         return {"ok": True, "path": str(self.session_path), "session": session.redacted()}
 
     def load_session(self, required: bool = True) -> Optional[FlowSession]:
@@ -180,7 +215,10 @@ class FlowClient:
             data = json.loads(self.session_path.read_text(encoding="utf-8"))
             self.user_id = data["user_id"]
             self.rgsn_dttm = data["rgsn_dttm"]
-            return FlowSession(self.user_id, self.rgsn_dttm)
+            cookies = data.get("cookies") or {}
+            if not isinstance(cookies, dict):
+                cookies = {}
+            return FlowSession(self.user_id, self.rgsn_dttm, cookies=cookies)
         if required:
             raise FlowApiError(f"Session file not found: {self.session_path}")
         return None
@@ -192,10 +230,32 @@ class FlowClient:
     def set_session(self, user_id: str, rgsn_dttm: str) -> dict[str, Any]:
         return self.save_session(FlowSession(user_id=user_id, rgsn_dttm=rgsn_dttm))
 
+    @staticmethod
+    def _encode_jct_body(payload: dict[str, Any]) -> str:
+        """Build the _JSON_ form body exactly as Flow's web client does.
+
+        Flow double-URL-encodes the whole _JSON_ value, and embeds the RGSN_DTTM
+        token already URL-encoded once (so its '/', '+', '=' end up triple-encoded
+        on the wire). Sending a single-encoded body yields S0002 'session expired'
+        even with a valid token. Verified byte-for-byte against a captured request.
+        """
+        p = dict(payload)
+        tok = p.get("RGSN_DTTM")
+        if tok:
+            # Stored token may be raw base64 or partially %-encoded; normalize to raw.
+            while "%" in tok:
+                dec = urllib.parse.unquote(tok)
+                if dec == tok:
+                    break
+                tok = dec
+            p["RGSN_DTTM"] = urllib.parse.quote(tok, safe="")
+        js = json.dumps(p, ensure_ascii=False, separators=(",", ":"))
+        return "_JSON_=" + urllib.parse.quote(urllib.parse.quote(js, safe=""), safe="")
+
     def _post(self, endpoint: str, payload: dict[str, Any], *, referer_path: str = "/main.act", retries: int = 2) -> dict[str, Any]:
         if not endpoint.startswith("/"):
             endpoint = "/" + endpoint
-        body = urllib.parse.urlencode({"_JSON_": json.dumps(payload, ensure_ascii=False, separators=(",", ":"))})
+        body = self._encode_jct_body(payload)
         headers = {"Referer": f"{self.base_url}{referer_path}"}
         last_head: Any = None
         for attempt in range(retries + 1):
@@ -276,7 +336,11 @@ class FlowClient:
         token = data.get("RGSN_DTTM") or data.get("TOKEN") or data.get("SESSION_KEY")
         if not token:
             raise FlowApiError(f"Flow login succeeded but no session token was found in response keys: {sorted(data.keys())}")
-        saved = self.save_session(FlowSession(str(new_user), str(token)))
+        self.user_id = str(new_user)
+        self.rgsn_dttm = str(token)
+        # save_session() uses self.session, which captures the JSESSIONID/AWSALB cookies
+        # the server just issued — those are required for subsequent API calls.
+        saved = self.save_session()
         return {"ok": True, "session": saved["session"], "raw_keys": sorted(data.keys())}
 
     def list_projects(
